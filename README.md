@@ -645,3 +645,123 @@ pytest
 
 Tests use mocked HTTP responses and do not require network access or a real
 platform account.
+
+## Werewolf strategy agent
+
+The default agent uses `werewolf-role-strategy.md` through separate observation,
+inference, planning, and execution layers:
+
+- `agent/mechanics.py` maintains verified roles, personal checks, display-name
+  mappings, and completed public records. Python enumerates all consistent
+  original wolf pairs, derives certain alignments, calculates parity and
+  no-elimination outcomes, and computes plurality bounds for proposed coalitions.
+- `agent/planning.py` asks the model for structured tactical plans: ranked wolf
+  hypotheses, vote targets, investigation targets, night-kill contingencies,
+  disclosure decisions, and interpretations tied to exact message quotations.
+  Claims and promised votes remain uncertain evidence; they never prune factual
+  assignments. Coalition bounds are conditional on promises actually being kept.
+- `agent/agent.py` executes eligible ranked choices, handles forced wins and
+  neutral opening investigations directly, and renders exact seer reports,
+  private wolf coordination, and final vote commitments with Python templates.
+  The model writes other discussion contributions using the verified model and
+  tactical plan. Plans are reused until the evidence or game phase changes.
+
+Each game has isolated observation and message memory. Invalid core plan fields receive one repair attempt within the decision deadline.
+Python deduplicates rankings, retains omitted wolf pairs as explicitly unranked
+possibilities, and drops unsupported assessment/commitment annotations individually.
+Grounding accepts whitespace differences but still requires the cited source text.
+A valid plan is not discarded because an optional annotation is unusable. Confirmed town cannot be selected
+for a town vote; checked investigation targets are skipped when unknown targets
+remain. Published commitments update the executor's intended vote. The server's
+transcript also restores the current message quota after worker restarts. There
+is no configurable hybrid mode or per-day LLM call cap: model calls serve
+uncertain tactical judgments rather than repeating mechanical calculations.
+No private analysis is submitted as spectator reasoning.
+
+Add these settings to your existing `.env` (keep your platform settings):
+
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+# Optional for an OpenAI-compatible endpoint:
+# OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+Run `python -m agent --match` for assigned test matches, or
+`python -m agent --tournament` for tournament games. This default agent supports
+Werewolf only; use the existing example agents for other games.
+
+The agent uses OpenAI Chat Completions with strict structured outputs over the
+existing `httpx` dependency. Action planning and its repair share a 45-second request budget. Discussion
+planning uses at most 35 seconds while reserving time for a message; discussion
+writing uses at most 20 seconds. The remaining discussion clock bounds both.
+GPT-6 planning explicitly uses low reasoning effort and message rendering uses
+none, with completion budgets of 8192 and 2048 tokens respectively. Message
+rendering uses the plan without resending the entire strategy. These are HTTP timeouts, not a hard real-time
+execution guarantee. On an API or
+validation failure, it ends discussion or plays its last intended legal day
+vote; otherwise it prefers a confirmed wolf for town, then randomly selects an
+eligible non-abstention target. Factual action filters also apply to fallbacks.
+This preserves playability; strategic strength still needs live-game evaluation.
+Keys and response bodies are never logged. Only this seat's game observations
+and visible messages are sent to OpenAI. No live API call is needed for tests.
+
+The root strategy file is read at startup; restart running agents after editing
+it. `agent/strategy.md` is the bundled copy for installed distributions; update
+that copy when distributing a revised strategy.
+
+Fact parsing is deliberately conservative: it supports explicit personal role
+lines, `Night N: PlayerX is/was wolf/villager/non-wolf.` lines, structured personal
+`role`/`investigations`/`wolf_partners` fields, and public role-reveal records.
+Unrecognized observations stay in raw memory for tactical interpretation; the
+model cannot promote a guessed interpretation into a hard fact. An absent
+no-elimination counter remains unknown. Extend the parser with captured fixtures
+if the live engine uses another format. Night outcome calculations assume an
+ordinary successful kill, matching the strategy's elimination-clock table.
+
+The evidence layer (`agent/evidence.py`) now distinguishes original attributed
+statements, latest explicit intentions, and completed server ballot records.
+Quoted or secondhand promises do not enter coalition counts; later revisions and
+withdrawals supersede earlier promises. Unsupported formats remain raw evidence.
+Conflicting message identities are quarantined. Corrected ballot snapshots retain
+a revision flag, and votes against same-day resigned targets are not counted.
+
+When a dead player's role is revealed as seer, the agent revisits their own earlier
+check reports. Consistent reports become strong evidence under the honest-town
+assumption, rather than personal certainty. Conflicting reports are disputed;
+strong clearances lower vote priority. Suspicion reasons and alternative
+explanations live separately from announced vote support. Defense plans address
+an accusation with evidence, an alternative explanation, and a viable alternative
+target; bare verified-town assertions are replaced with a factual response.
+
+Public commitments constrain final votes. Revisions record reasons and evidence
+references, and public revision messages explicitly explain the change. Selected
+moves, submission results, and completed ballots are separate records. These
+records remain per-game memory; this change does not add durable replay logs.
+Wolves use private versioned proposals and explicit confirmations, resolve
+conflicts with a shared tie-break, and follow confirmed living night contingencies.
+An immediate winning move bypasses future planning; a promised winning vote is
+still conditional rather than a secured result.
+
+Opening nominations are now explicitly provisional. A specific, internally
+consistent wolf check from a living seer claimant reopens an unsupported crowd
+choice. The agent asks for counterclaims and evidence against the alternative;
+rejecting the report needs a substantive competing case. Repeated reports from
+the same claimant remain one claim. Claims still never prune hard role assignments.
+
+Wolf messages to town use an isolated public-evidence writer. Its input omits
+private observations, wolf assignments, agreements, action history, and tactical
+revision reasons. Final-message templates also never copy a wolf's private reason.
+A conservative output check catches explicit alliance/role leaks as defense in
+depth, without claiming to detect every possible semantic disclosure. Private
+partner plans use the dedicated proposal/confirmation protocol.
+
+The planner receives conditional ballot-effect calculations: if every own ballot
+has the same losing result under others' current intentions, it must persuade
+another voter rather than claim a ballot switch can break that coalition. Wolf
+proposals retain night contingencies for ties and wolf eliminations even when a
+town elimination would win immediately. Night planning also receives the identities
+of living recipients holding this seat's damaging private disclosures; absence
+of a recognized public quotation is recorded as unknown publicity, not proof
+that nobody else knows. Repeated public confirmations are suppressed in favor of
+new evidence or targeted persuasion.
